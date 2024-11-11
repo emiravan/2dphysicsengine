@@ -1,6 +1,7 @@
 #include "Application.h"
 #include "./Physics/Constants.h"
 #include "./Physics/Force.h"
+#include "Graphics.h"
 
 bool Application::IsRunning() {
     return running;
@@ -12,13 +13,13 @@ bool Application::IsRunning() {
 void Application::Setup() {
     running = Graphics::OpenWindow();
 
-    Particle* smallPlanet = new Particle(200, 200, 1.0);
-    smallPlanet->radius = 6;
-    particles.push_back(smallPlanet);
+    anchor = Vec2(Graphics::Width() / 2.0, 30);
 
-    Particle* bigPlanet = new Particle(500, 500, 20.0);
-    bigPlanet->radius = 20;
-    particles.push_back(bigPlanet);
+    for (int i = 0; i < NUM_PARTICLES; i++) {
+        Particle* particle = new Particle(anchor.x, anchor.y + (i + restLength), 2.0);
+        particle->radius = 6;
+        particles.push_back(particle);
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -69,8 +70,9 @@ void Application::Input() {
             case SDL_MOUSEBUTTONUP:
                 if (leftMouseButtonDown && event.button.button == SDL_BUTTON_LEFT) {
                     leftMouseButtonDown = false;
-                    Vec2 impulseDirection = (particles[0]->position - mouseCursor).UnitVector();
-                    float impulseMagnitude = (particles[0]->position - mouseCursor).Magnitude() * 5.0;
+                    int lastParticle = NUM_PARTICLES - 1;
+                    Vec2 impulseDirection = (particles[lastParticle]->position - mouseCursor).UnitVector();
+                    float impulseMagnitude = (particles[lastParticle]->position - mouseCursor).Magnitude() * 5.0;
                     particles[0]->velocity = impulseDirection * impulseMagnitude;
                 }
                 break;
@@ -100,15 +102,27 @@ void Application::Update() {
     for (auto particle : particles) {
         particle->AddForce(pushForce);
 
-        // Apply a friction force
-        Vec2 friction = Force::GenerateFrictionForce(*particle, 20);
-        particle->AddForce(friction);
+        // Apply a drag force
+        Vec2 drag = Force::GenerateDragForce(*particle, 0.002);
+        particle->AddForce(drag);
+
+        // Apply a weight force
+        Vec2 weight = Vec2(0.0, particle->mass * 9.8 * PIXELS_PER_METER);
+        particle->AddForce(weight);
     }
 
-    // Applying a gravitational force to our two particles/planets
-    Vec2 attraction = Force::GenerateGravitationalForce(*particles[0], *particles[1], 1000.0, 5, 100);
-    particles[0]->AddForce(attraction);
-    particles[1]->AddForce(-attraction);
+    // Attach the head to the anchor with a spring
+    Vec2 springForce = Force::GenerateSpringForce(*particles[0], anchor, restLength, k);
+    particles[0]->AddForce(springForce);
+
+    // Connect the particles with the one before in a chain of springs
+    for (int i = 1; i < NUM_PARTICLES; i++) {
+        int currParticle = i;
+        int prevParticle = i - 1;
+        Vec2 springForce = Force::GenerateSpringForce(*particles[currParticle], *particles[prevParticle], restLength, k);
+        particles[currParticle]->AddForce(springForce);
+        particles[prevParticle]->AddForce(-springForce);
+    }
 
     // Integrate the acceleration and velocity to estimate the new position
     for (auto particle : particles) {
@@ -142,11 +156,25 @@ void Application::Render() {
     Graphics::ClearScreen(0xFF0F0721);
 
     if (leftMouseButtonDown) {
-        Graphics::DrawLine(particles[0]->position.x, particles[0]->position.y, mouseCursor.x, mouseCursor.y, 0xFF0000FF);
+        int lastParticle = NUM_PARTICLES - 1;
+        Graphics::DrawLine(particles[lastParticle]->position.x, particles[lastParticle]->position.y, mouseCursor.x, mouseCursor.y, 0xFF0000FF);
     }
 
-    Graphics::DrawFillCircle(particles[0]->position.x, particles[0]->position.y, particles[0]->radius, 0xFFAA3300);
-    Graphics::DrawFillCircle(particles[1]->position.x, particles[1]->position.y, particles[1]->radius, 0xFF00FFFF);
+    // Draw the anchor and the spring to the first particle
+    Graphics::DrawFillCircle(anchor.x, anchor.y, 5, 0xFF001155);
+    Graphics::DrawLine(anchor.x, anchor.y, particles[0]->position.x, particles[0]->position.y, 0xFF313131);
+
+    // Draw all the springs from one particle to the next
+    for (int i = 0; i < NUM_PARTICLES - 1; i++) {
+        int currParticle = i;
+        int nextParticle = i + 1;
+        Graphics::DrawLine(particles[currParticle]->position.x, particles[currParticle]->position.y, particles[nextParticle]->position.x, particles[nextParticle]->position.y, 0xFF313131);
+    }
+
+    // Draw all the particles
+    for (auto particle : particles) {
+        Graphics::DrawFillCircle(particle->position.x, particle->position.y, particle->radius, 0xFFEEBB00);
+    }
 
     Graphics::RenderFrame();
 }
