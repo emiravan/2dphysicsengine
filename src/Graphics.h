@@ -1,9 +1,9 @@
 #ifndef GRAPHICS_H
 #define GRAPHICS_H
 
+#include "Physics/Vec2.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL2_gfxPrimitives.h>
-#include "Physics/Vec2.h"
 #include <vector>
 
 struct Graphics {
